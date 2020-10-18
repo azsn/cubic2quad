@@ -1,5 +1,8 @@
 #include <math.h>
+#include <stdio.h>
 #include <stdbool.h>
+
+#define PRECISION 1e-8
 
 typedef struct {
 	double x;
@@ -107,7 +110,7 @@ static int quad_solve(
 	const double a, const double b, const double c, double out[2])
 {
 	// a*x^2 + b*x + c = 0
-	if (a == 0) {
+	if (fabs(a) < PRECISION) {
 		if (b == 0) {
 			out[0] = 0;
 			out[1] = 0;
@@ -119,14 +122,14 @@ static int quad_solve(
 		}
 	}
 	const double D = b*b - 4*a*c;
-	if (D < 0) {
-		out[0] = 0;
-		out[1] = 0;
-		return 0;
-	} else if (D == 0) {
+	if (fabs(D) < PRECISION) {
 		out[0] = -b/(2*a);
 		out[1] = 0;
 		return 1;
+	} else if (D < 0) {
+		out[0] = 0;
+		out[1] = 0;
+		return 0;
 	}
 	const double DSqrt = sqrt(D);
 	out[0] = (-b - DSqrt) / (2*a);
@@ -144,7 +147,7 @@ static int cubic_solve(
 	double out[3])
 {
 	// a*x^3 + b*x^2 + c*x + d = 0
-	if (a == 0) {
+	if (fabs(a) < PRECISION) {
 		out[2] = 0;
 		return quad_solve(b, c, d, out);
 	}
@@ -155,18 +158,18 @@ static int cubic_solve(
 	const double deltaSq = (b*b - 3*a*c) / (9*a*a); // delta^2
 	const double hSq = 4*a*a * pow(deltaSq, 3);
 	const double D3 = yn*yn - hSq;
-	if (D3 > 0) { // 1 real root
-		const double D3Sqrt = sqrt(D3);
-		out[0] = xn + cubic_root((-yn + D3Sqrt)/(2*a)) + cubic_root((-yn - D3Sqrt)/(2*a));
-		out[1] = 0;
-		out[2] = 0;
-		return 1;
-	} else if (D3 == 0) { // 2 real roots
+	if (fabs(D3) < PRECISION) { // 2 real roots
 		const double delta1 = cubic_root(yn/(2*a));
 		out[0] = xn - 2 * delta1;
 		out[1] = xn + delta1;
 		out[2] = 0;
 		return 2;
+	} else if (D3 > 0) { // 1 real root
+		const double D3Sqrt = sqrt(D3);
+		out[0] = xn + cubic_root((-yn + D3Sqrt)/(2*a)) + cubic_root((-yn - D3Sqrt)/(2*a));
+		out[1] = 0;
+		out[2] = 0;
+		return 1;
 	}
 	// 3 real roots
 	const double theta = acos(-yn / sqrt(hSq)) / 3;
@@ -212,7 +215,7 @@ static double min_distance_to_quad(
 	double candidates[5];
 	int nc = 0;
 	for (int i = 0; i < nroots; i++) {
-		if (roots[i] > 0 && roots[i] < 1) {
+		if (roots[i] > PRECISION && roots[i] < 1 - PRECISION) {
 			candidates[nc++] = roots[i];
 		}
 	}
@@ -262,7 +265,7 @@ static void process_segment(
 	out->p2 = f2;
 
 	const double D = -f1_.x * f2_.y + f2_.x * f1_.y;
-	if (fabs(D) < 1e-8) {
+	if (fabs(D) < PRECISION) {
 		// straight line segment
 		out->c1 = p_div(p_add(f1, f2), 2);
 		return;
@@ -385,7 +388,7 @@ static int solve_inflections(const CBezier b, double out[MAX_INFLECTIONS])
 
 	int ni = 0;
 	for (int i = 0; i < nroots; i++) {
-		if (roots[i] > 1e-8 && roots[i] < 1 - 1e-8) {
+		if (roots[i] > PRECISION && roots[i] < 1 - PRECISION) {
 			out[ni++] = roots[i];
 		}
 	}
@@ -417,7 +420,8 @@ static int _cubic_to_quad(const CBezier cb, double errorBound, QBezier approxima
 	int segmentsCount = 1;
 	for (; segmentsCount <= MAX_SEGMENTS; segmentsCount++) {
 		int i = 0;
-		for (double t = 0; t < 1; t += 1.0/(double)segmentsCount) {
+		for (int i = 0; i < segmentsCount; i++) {
+			double t = (double)i/(double)segmentsCount;
 			process_segment(a, b, c, d, t, t + 1.0/(double)segmentsCount, &approximation[i]);
 			i++;
 		}
