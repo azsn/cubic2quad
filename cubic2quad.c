@@ -12,6 +12,13 @@ typedef struct {
 	Point p2;
 } QBezier;
 
+typedef struct {
+	Point p1;
+	Point c1;
+	Point c2;
+	Point p2;
+} CBezier;
+
 static Point p_new(const double x, const double y)
 {
 	Point p;
@@ -323,59 +330,48 @@ static bool _is_approximation_close(
  * Split cubic bézier curve into two cubic curves, see details here:
  * https://math.stackexchange.com/questions/877725
  */
-static void subdivide_cubic(
-	const double x1, const double y1,
-	const double x2, const double y2,
-	const double x3, const double y3,
-	const double x4, const double y4,
-	const double t,
-	double out[2][8])
+static void subdivide_cubic(const CBezier b, const double t, CBezier out[2])
 {
 	const double u = 1-t, v = t;
 	
-	const double bx = x1*u + x2*v;
-	const double sx = x2*u + x3*v;
-	const double fx = x3*u + x4*v;
+	const double bx = b.p1.x*u + b.c1.x*v;
+	const double sx = b.c1.x*u + b.c2.x*v;
+	const double fx = b.c2.x*u + b.p2.x*v;
 	const double cx = bx*u + sx*v;
 	const double ex = sx*u + fx*v;
 	const double dx = cx*u + ex*v;
 	
-	const double by = y1*u + y2*v;
-	const double sy = y2*u + y3*v;
-	const double fy = y3*u + y4*v;
+	const double by = b.p1.y*u + b.c1.y*v;
+	const double sy = b.c1.y*u + b.c2.y*v;
+	const double fy = b.c2.y*u + b.p2.y*v;
 	const double cy = by*u + sy*v;
 	const double ey = sy*u + fy*v;
 	const double dy = cy*u + ey*v;
 
-	out[0][0] = x1;
-	out[0][1] = y1;
-	out[0][2] = bx;
-	out[0][3] = by;
-	out[0][4] = cx;
-	out[0][5] = cy;
-	out[0][6] = dx;
-	out[0][7] = dy;
-	out[1][0] = dx;
-	out[1][1] = dy;
-	out[1][2] = ex;
-	out[1][3] = ey;
-	out[1][4] = fx;
-	out[1][5] = fy;
-	out[1][6] = x4;
-	out[1][7] = y4;
+	out[0].p1 = p_new(b.p1.x, b.p1.y);
+	out[0].c1 = p_new(bx, by);
+	out[0].c2 = p_new(cx, cy);
+	out[0].p2 = p_new(dx, dy);
+	out[1].p1 = p_new(dx, dy);
+	out[1].c1 = p_new(ex, ey);
+	out[1].c2 = p_new(fx, fy);
+	out[1].p2 = p_new(b.p2.x, b.p2.y);
 }
+
+#define MAX_INFLECTIONS (2)
 
 /*
  * Find inflection points on a cubic curve, algorithm is similar to this one:
  * http://www.caffeineowl.com/graphics/2d/vectorial/cubic-inflexion.html
  */
-static int solve_inflections(
-	const double x1, const double y1,
-	const double x2, const double y2,
-	const double x3, const double y3,
-	const double x4, const double y4,
-	double out[2])
+static int solve_inflections(const CBezier b, double out[MAX_INFLECTIONS])
 {
+	const double
+		x1 = b.p1.x, y1 = b.p1.y,
+		x2 = b.c1.x, y2 = b.c1.y,
+		x3 = b.c2.x, y3 = b.c2.y,
+		x4 = b.p2.x, y4 = b.p2.y;
+
 	const double p = -(x4 * (y1 - 2 * y2 + y3)) + x3 * (2 * y1 - 3 * y2 + y4)
 	           + x1 * (y2 - 2 * y3 + y4) - x2 * (y1 - 3 * y3 + 2 * y4);
 	const double q = x4 * (y1 - y2) + 3 * x3 * (-y1 + y2) + x2 * (2 * y1 - 3 * y3 + y4) - x1 * (2 * y2 - 3 * y3 + y4);
@@ -403,6 +399,8 @@ static int solve_inflections(
 	return ni;
 }
 
+#define MAX_SEGMENTS (8)
+
 /*
  * Approximate cubic Bezier curve defined with base points p1, p2 and control points c1, c2 with
  * with a few quadratic Bezier curves.
@@ -410,35 +408,22 @@ static int solve_inflections(
  * simplified Hausdorff distance to determine number of segments that is enough to make error small.
  * In general the method is the same as described here: https://fontforge.github.io/bezier.html.
  */
-static void _cubic_to_quad(
-	double p1x, double p1y,
-	double c1x, double c1y,
-	double c2x, double c2y,
-	double p2x, double p2y,
-	double errorBound)
+static int _cubic_to_quad(const CBezier cb, double errorBound, QBezier approximation[MAX_SEGMENTS])
 {
-	const Point p1 = p_new(p1x, p1y);
-	const Point c1 = p_new(c1x, c1y);
-	const Point c2 = p_new(c2x, c2y);
-	const Point p2 = p_new(p2x, p2y);
-
 	Point pc[4];
-	calc_power_coefficients(p1, c2, c2, p2, pc);
+	calc_power_coefficients(cb.p1, cb.c2, cb.c2, cb.p2, pc);
 	const Point a = pc[0], b = pc[1], c = pc[2], d = pc[3];
 
-	static const int maxSegments = 8;
 	int segmentsCount = 1;
-
-	QBezier approximation[maxSegments];
-	for (; segmentsCount <= 8; segmentsCount++) {
+	for (; segmentsCount <= MAX_SEGMENTS; segmentsCount++) {
 		int i = 0;
 		for (double t = 0; t < 1; t += 1.0/(double)segmentsCount) {
 			process_segment(a, b, c, d, t, t + 1.0/(double)segmentsCount, &approximation[i]);
 			i++;
 		}
 		if (segmentsCount == 1 && (
-			p_dot(p_sub(approximation[0].c1, p1), p_sub(c1, p1)) < 0 ||
-			p_dot(p_sub(approximation[0].c1, p2), p_sub(c2, p2)) < 0)) {
+			p_dot(p_sub(approximation[0].c1, cb.p1), p_sub(cb.c1, cb.p1)) < 0 ||
+			p_dot(p_sub(approximation[0].c1, cb.p2), p_sub(cb.c2, cb.p2)) < 0)) {
 			// approximation concave, while the curve is convex (or vice versa)
 			continue;
 		}
@@ -446,43 +431,45 @@ static void _cubic_to_quad(
 			break;
 		}
 	}
-
-	// TODO: return
+	return segmentsCount;
 }
 
-static void cubic_to_quad(
-	double p1x, double p1y,
-	double c1x, double c1y,
-	double c2x, double c2y,
-	double p2x, double p2y,
-	double errorBound)
+#define MAX_QUADS_OUT (MAX_SEGMENTS * MAX_INFLECTIONS) // 16
+
+static int cubic_to_quad(const CBezier cb, double errorBound, QBezier result[MAX_QUADS_OUT])
 {
-	double inflections[2];
-	int numInflections = solve_inflections(p1x, p1y, c1x, c1y, c2x, c2y, p2x, p2y, inflections);
+	double inflections[MAX_INFLECTIONS];
+	int numInflections = solve_inflections(cb, inflections);
 
 	if (numInflections == 0) {
-		// TODO: return
-		_cubic_to_quad(p1x, p1y, c1x, c1y, c2x, c2y, p2x, p2y, errorBound);
-		return;
+		return _cubic_to_quad(cb, errorBound, result);
 	}
 
-	double curve[8] = { p1x, p1y, c1x, c1y, c2x, c2y, p2x, p2y };
-	double prevPoint = 0;
+	int nq = 0;
 
-	double split[2][8];
+	CBezier curve = cb;
+	double prevPoint = 0;
+	QBezier quad[MAX_SEGMENTS];
+
+	CBezier split[2];
 	for (int inflectionIdx = 0; inflectionIdx < numInflections; inflectionIdx++) {
-		subdivide_cubic(
-			curve[0], curve[1], curve[2], curve[3],
-			curve[4], curve[5], curve[6], curve[7],
+		subdivide_cubic(curve,
 			// we make a new curve, so adjust inflection point accordingly
 			1 - (1 - inflections[inflectionIdx]) / (1 - prevPoint),
 			split);
 
-		// TODO: return
-		_cubic_to_quad(
-			split[0][0], split[0][1], split[0][2], split[0][3],
-			split[0][4], split[0][5], split[0][6], split[0][7],
-			errorBound);
+		nq += _cubic_to_quad(split[0], errorBound, &result[nq]);
 
+		curve = split[1];
+		prevPoint = inflections[inflectionIdx];
 	}
+
+	nq += _cubic_to_quad(curve, errorBound, &result[nq]);
+	return nq;
 }
+
+//int main()
+//{
+//	CBezier cb;
+//	cubic_to_quad(
+//}
