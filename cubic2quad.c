@@ -273,7 +273,6 @@ static void process_segment(
 	const double cx = (f1_.x*(f2.y*f2_.x - f2.x*f2_.y) + f2_.x*(f1.x*f1_.y - f1.y*f1_.x)) / D;
 	const double cy = (f1_.y*(f2.y*f2_.x - f2.x*f2_.y) + f2_.y*(f1.x*f1_.y - f1.y*f1_.x)) / D;
 	out->c1 = p_new(cx, cy);
-	return;
 }
 
 static bool is_segment_approximation_close(
@@ -327,38 +326,36 @@ static bool _is_approximation_close(
 	return true;
 }
 
-// TODO? fromFlatArray, toFlatArray, isApproximationClose
-
 /*
  * Split cubic bézier curve into two cubic curves, see details here:
  * https://math.stackexchange.com/questions/877725
  */
-static void subdivide_cubic(const CBezier b, const double t, CBezier out[2])
+static void subdivide_cubic(const CBezier *b, const double t, CBezier out[2])
 {
 	const double u = 1-t, v = t;
 	
-	const double bx = b.p1.x*u + b.c1.x*v;
-	const double sx = b.c1.x*u + b.c2.x*v;
-	const double fx = b.c2.x*u + b.p2.x*v;
+	const double bx = b->p1.x*u + b->c1.x*v;
+	const double sx = b->c1.x*u + b->c2.x*v;
+	const double fx = b->c2.x*u + b->p2.x*v;
 	const double cx = bx*u + sx*v;
 	const double ex = sx*u + fx*v;
 	const double dx = cx*u + ex*v;
 	
-	const double by = b.p1.y*u + b.c1.y*v;
-	const double sy = b.c1.y*u + b.c2.y*v;
-	const double fy = b.c2.y*u + b.p2.y*v;
+	const double by = b->p1.y*u + b->c1.y*v;
+	const double sy = b->c1.y*u + b->c2.y*v;
+	const double fy = b->c2.y*u + b->p2.y*v;
 	const double cy = by*u + sy*v;
 	const double ey = sy*u + fy*v;
 	const double dy = cy*u + ey*v;
 
-	out[0].p1 = p_new(b.p1.x, b.p1.y);
+	out[0].p1 = p_new(b->p1.x, b->p1.y);
 	out[0].c1 = p_new(bx, by);
 	out[0].c2 = p_new(cx, cy);
 	out[0].p2 = p_new(dx, dy);
 	out[1].p1 = p_new(dx, dy);
 	out[1].c1 = p_new(ex, ey);
 	out[1].c2 = p_new(fx, fy);
-	out[1].p2 = p_new(b.p2.x, b.p2.y);
+	out[1].p2 = p_new(b->p2.x, b->p2.y);
 }
 
 #define MAX_INFLECTIONS (2)
@@ -367,13 +364,13 @@ static void subdivide_cubic(const CBezier b, const double t, CBezier out[2])
  * Find inflection points on a cubic curve, algorithm is similar to this one:
  * http://www.caffeineowl.com/graphics/2d/vectorial/cubic-inflexion.html
  */
-static int solve_inflections(const CBezier b, double out[MAX_INFLECTIONS])
+static int solve_inflections(const CBezier *b, double out[MAX_INFLECTIONS])
 {
 	const double
-		x1 = b.p1.x, y1 = b.p1.y,
-		x2 = b.c1.x, y2 = b.c1.y,
-		x3 = b.c2.x, y3 = b.c2.y,
-		x4 = b.p2.x, y4 = b.p2.y;
+		x1 = b->p1.x, y1 = b->p1.y,
+		x2 = b->c1.x, y2 = b->c1.y,
+		x3 = b->c2.x, y3 = b->c2.y,
+		x4 = b->p2.x, y4 = b->p2.y;
 
 	const double p = -(x4 * (y1 - 2 * y2 + y3)) + x3 * (2 * y1 - 3 * y2 + y4)
 	           + x1 * (y2 - 2 * y3 + y4) - x2 * (y1 - 3 * y3 + 2 * y4);
@@ -411,36 +408,39 @@ static int solve_inflections(const CBezier b, double out[MAX_INFLECTIONS])
  * simplified Hausdorff distance to determine number of segments that is enough to make error small.
  * In general the method is the same as described here: https://fontforge.github.io/bezier.html.
  */
-static int _cubic_to_quad(const CBezier cb, double errorBound, QBezier approximation[MAX_SEGMENTS])
+static int _cubic_to_quad(const CBezier *cb, double errorBound, QBezier approximation[MAX_SEGMENTS])
 {
 	Point pc[4];
-	calc_power_coefficients(cb.p1, cb.c2, cb.c2, cb.p2, pc);
+	calc_power_coefficients(cb->p1, cb->c1, cb->c2, cb->p2, pc);
 	const Point a = pc[0], b = pc[1], c = pc[2], d = pc[3];
 
 	int segmentsCount = 1;
 	for (; segmentsCount <= MAX_SEGMENTS; segmentsCount++) {
-		int i = 0;
 		for (int i = 0; i < segmentsCount; i++) {
 			double t = (double)i/(double)segmentsCount;
 			process_segment(a, b, c, d, t, t + 1.0/(double)segmentsCount, &approximation[i]);
-			i++;
 		}
 		if (segmentsCount == 1 && (
-			p_dot(p_sub(approximation[0].c1, cb.p1), p_sub(cb.c1, cb.p1)) < 0 ||
-			p_dot(p_sub(approximation[0].c1, cb.p2), p_sub(cb.c2, cb.p2)) < 0)) {
+			p_dot(p_sub(approximation[0].c1, cb->p1), p_sub(cb->c1, cb->p1)) < 0 ||
+			p_dot(p_sub(approximation[0].c1, cb->p2), p_sub(cb->c2, cb->p2)) < 0)) {
 			// approximation concave, while the curve is convex (or vice versa)
 			continue;
 		}
 		if (_is_approximation_close(a, b, c, d, approximation, segmentsCount, errorBound)) {
-			break;
+			return segmentsCount;
 		}
 	}
-	return segmentsCount;
+	return MAX_SEGMENTS;
 }
 
-#define MAX_QUADS_OUT (MAX_SEGMENTS * MAX_INFLECTIONS) // 16
+// A cubic bezier can have up to two inflection points
+// (e.g: [0, 0, 10, 20, 0, 10, 20, 20] has 2)
+// leading to 3 overall sections to convert. This algorithm limits to 8 output
+// quads segments per section (depending on errorBound), for a maximum of 24
+// quads per input cubic.
+#define MAX_QUADS_OUT (MAX_SEGMENTS * (MAX_INFLECTIONS + 1)) // 24
 
-static int cubic_to_quad(const CBezier cb, double errorBound, QBezier result[MAX_QUADS_OUT])
+static int cubic_to_quad(const CBezier *cb, double errorBound, QBezier result[MAX_QUADS_OUT])
 {
 	double inflections[MAX_INFLECTIONS];
 	int numInflections = solve_inflections(cb, inflections);
@@ -451,29 +451,35 @@ static int cubic_to_quad(const CBezier cb, double errorBound, QBezier result[MAX
 
 	int nq = 0;
 
-	CBezier curve = cb;
+	CBezier curve = *cb;
 	double prevPoint = 0;
 	QBezier quad[MAX_SEGMENTS];
 
 	CBezier split[2];
 	for (int inflectionIdx = 0; inflectionIdx < numInflections; inflectionIdx++) {
-		subdivide_cubic(curve,
+		subdivide_cubic(&curve,
 			// we make a new curve, so adjust inflection point accordingly
 			1 - (1 - inflections[inflectionIdx]) / (1 - prevPoint),
 			split);
 
-		nq += _cubic_to_quad(split[0], errorBound, &result[nq]);
+		nq += _cubic_to_quad(&split[0], errorBound, &result[nq]);
 
 		curve = split[1];
 		prevPoint = inflections[inflectionIdx];
 	}
 
-	nq += _cubic_to_quad(curve, errorBound, &result[nq]);
+	nq += _cubic_to_quad(&curve, errorBound, &result[nq]);
 	return nq;
 }
 
-//int main()
-//{
-//	CBezier cb;
-//	cubic_to_quad(
-//}
+// 24 quads * 3 points per quad * 2 doubles per point
+#define MAX_DOUBLES_OUT (MAX_QUADS_OUT * 3 * 2) // 144 (1152 bytes)
+
+// Converts the input cubic
+// (8 doubles in p1x, p1y, c1x, c1y, c2x, c2y, p2x, p2y form)
+// into up to 24 quadratics. The output buffer must be at least 144 doubles
+// long for the 24 quadratics (6 bytes each).
+int cubic2quad(const double in[8], const double errorBound, double out[MAX_DOUBLES_OUT])
+{
+	return cubic_to_quad((const CBezier *)in, errorBound, (QBezier *)out);
+}
