@@ -2,6 +2,6 @@ run_tests: clean tests
 	./tests
 
 clean:
-	rm tests
+	-rm tests
 
 tests: tests.c
