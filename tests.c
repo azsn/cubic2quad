@@ -4,7 +4,7 @@
 
 #define assertTrue(a) do { \
 	if (!(a)) { \
-		fprintf(stderr, "assertion failed (value: %d). line %d\n", (bool)a, __LINE__); \
+		fprintf(stderr, "assertion failed (value: %d). line %d\n", (bool)(a), __LINE__); \
 	} \
 } while(0)
 
@@ -229,7 +229,7 @@ static void test_cubic2quad()
 	// should split curve at inflection point
 	{
 		double in[] = { 0, 100, 70, 0, 30, 0, 100, 100 };
-		int n = cubic2quad(in, 1000, out);
+		cubic2quad(in, 1000, out);
 		assertCloseRes(out[4], 34.33, 0.01);
 		assertCloseRes(out[5], 45.45, 0.01);
 		assertCloseRes(out[10], 65.67, 0.01);

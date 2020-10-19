@@ -22,6 +22,7 @@
 #include <math.h>
 #include <stdbool.h>
 
+#define UNUSED(x) (void)(x)
 #define PRECISION 1e-8
 
 typedef struct {
@@ -122,6 +123,7 @@ static Point calc_point_quad(
 static Point calc_point_derivative(
 	const Point a, const Point b, const Point c, const Point d, double t)
 {
+	UNUSED(d);
 	// d/dt[a*t^3 + b*t^2 + c*t + d] = 3*a*t^2 + 2*b*t + c = (3*a*t + 2*b)*t + c
 	return p_add(p_mul(p_add(p_mul(a, 3*t), p_mul(b, 2)), t), c);
 }
@@ -473,7 +475,6 @@ static int cubic_to_quad(const CBezier *cb, double errorBound, QBezier result[MA
 
 	CBezier curve = *cb;
 	double prevPoint = 0;
-	QBezier quad[MAX_SEGMENTS];
 
 	CBezier split[2];
 	for (int inflectionIdx = 0; inflectionIdx < numInflections; inflectionIdx++) {

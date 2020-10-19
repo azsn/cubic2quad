@@ -1,3 +1,5 @@
+CFLAGS+=-Wall -Wextra
+
 run_tests: clean tests
 	./tests
 
